@@ -124,59 +124,87 @@ def insert_automation(args, prompt: str, now_ms: int) -> str:
     return automation_id
 
 
+def last_assistant_text(session_id: str) -> str:
+    """从 part 表取最后一条 assistant 文本。
+
+    注意：message.data 里没有 text 字段（正文在 part 表），
+    直接读 message.data.text 永远是空——原兜底因此从未生效。
+    """
+    con = connect(SESSION_DB)
+    try:
+        row = con.execute(
+            "SELECT json_extract(p.data, '$.text') AS t "
+            "FROM part p JOIN message m ON p.message_id = m.id "
+            "WHERE p.session_id = ? "
+            "AND json_extract(m.data, '$.role') = 'assistant' "
+            "AND json_extract(p.data, '$.type') = 'text' "
+            "ORDER BY m.sequence DESC, p.sequence DESC LIMIT 1",
+            (session_id,)).fetchone()
+        return str(row["t"] or "") if row else ""
+    finally:
+        con.close()
+
+
+def lookup_run(automation_id: str):
+    con = connect(TASKS_DB)
+    try:
+        return con.execute(
+            "SELECT session_id, outcome, error, dispatch_status FROM automation_runs "
+            "WHERE run_id LIKE ? ORDER BY created_at DESC LIMIT 1",
+            (automation_id + ":%",)).fetchone()
+    finally:
+        con.close()
+
+
 def wait_for_result(args, automation_id: str, report: Path,
                     deadline: float) -> tuple[str, str]:
-    """回收：优先等报告文件；同时盯 automation_runs 和会话消息兜底。"""
+    """回收：报告文件是唯一完成信号；run succeeded 后用会话最后回复兜底。
+
+    兜底必须 gate 在 outcome='succeeded' 之后——ZCode 任务流式执行，
+    中途会产生大量 assistant 消息，不能见到第一条就收工。
+    """
     session_id = ""
-    fired_session = ""
+    announced_claim = False
+    announced_fallback = False
     out(f"[等待] 轮询结果（超时 {args.timeout_sec}s），报告: {report}")
     while time.time() < deadline:
         time.sleep(POLL_INTERVAL)
+
+        run = lookup_run(automation_id)
+        if run is not None:
+            session_id = session_id or (run["session_id"] or "")
+            if run["outcome"] == "failed" or (
+                    run["error"] and run["dispatch_status"] != "dispatched"):
+                raise SystemExit(f"ZCode 任务失败: {run['error']}")
+        elif not announced_claim:
+            con = connect(TASKS_DB)
+            try:
+                a = con.execute(
+                    "SELECT dispatch_status FROM automations WHERE automation_id = ?",
+                    (automation_id,)).fetchone()
+            finally:
+                con.close()
+            if a and a["dispatch_status"] == "claimed":
+                out("[状态] 已被调度器认领，等待任务创建……")
+                announced_claim = True
+
         if report.exists():
             try:
                 text = report.read_text(encoding="utf-8")
             except OSError:
                 text = ""
             if text.strip():
-                return session_id or fired_session, text
+                return session_id, text
 
-        con = connect(TASKS_DB)
-        try:
-            r = con.execute(
-                "SELECT session_id, outcome, error, dispatch_status FROM automation_runs "
-                "WHERE run_id LIKE ? ORDER BY created_at DESC LIMIT 1",
-                (automation_id + ":%",)).fetchone()
-            if r is None:
-                a = con.execute(
-                    "SELECT lifecycle_status, dispatch_status, last_error FROM automations "
-                    "WHERE automation_id = ?", (automation_id,)).fetchone()
-                if a and a["dispatch_status"] == "claimed":
-                    out("[状态] 已被调度器认领，等待任务创建……")
-                continue
-            fired_session = r["session_id"] or ""
-            if r["outcome"] == "failed" or (r["error"] and r["dispatch_status"] != "dispatched"):
-                raise SystemExit(f"ZCode 任务失败: {r['error']}")
-            out(f"[状态] run outcome={r['outcome']} session={fired_session}")
-        finally:
-            con.close()
-
-        if fired_session:
-            con = connect(SESSION_DB)
-            try:
-                rows = con.execute(
-                    "SELECT data FROM message WHERE session_id = ? "
-                    "ORDER BY sequence DESC LIMIT 2", (fired_session,)).fetchall()
-                texts = []
-                for row in rows:
-                    d = json.loads(row["data"])
-                    if d.get("role") == "assistant":
-                        texts.append(str(d.get("text") or ""))
-                last = "\n".join(t for t in texts if t.strip())
-                if last.strip():
-                    return fired_session, last
-            finally:
-                con.close()
-    return fired_session, ""
+        if run is not None and run["outcome"] == "succeeded" and session_id:
+            if not announced_fallback:
+                out(f"[状态] run succeeded，session={session_id}；报告文件未出现，"
+                    "改用会话最后一条回复兜底")
+                announced_fallback = True
+            last = last_assistant_text(session_id)
+            if last.strip():
+                return session_id, last
+    return session_id, ""
 
 
 def main() -> None:

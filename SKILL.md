@@ -80,6 +80,7 @@ python "<skill 目录>\scripts\dispatch.py" --task-file ... --cwd ... --timeout-
 - 任务绑定了用户正在聊天的会话 → prompt 排队不执行：派活一律默认全新任务，
   `--target-task` 只绑专用的派活任务。
 - 旧报告误判为新结果：脚本派单前会自动把 `zcode-report.md` 备份到
+- 报告文件是唯一完成信号；任务跑完（run `succeeded`）但没写报告时，脚本改用会话最后一条回复兜底（从 part 表取，勿读 message.data.text——该字段不存在）。
   `~/.zcode/Zcodedispatch-backup\`。
 - 中文乱码：脚本已强制 UTF-8；终端侧 `chcp 65001`。
 - 在错误目录执行会改错仓库：始终显式传 `--cwd` 目标仓库根目录。

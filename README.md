@@ -30,7 +30,7 @@ Copy-Item -Recurse codex-to-zcode "$env:USERPROFILE\.codex\skills\zcode-dispatch
 ## 使用（Codex 侧）
 
 ```powershell
-# 派活（默认：全新任务、yolo、GLM-5.3、思考 max、45s 后触发、超时 20 分钟）
+# 派活（默认：全新任务、yolo、GLM-5.3、思考 max、5s 后触发、超时 20 分钟）
 python "$env:USERPROFILE\.codex\skills\zcode-dispatch\scripts\dispatch.py" `
   --task-file "E:\repo\Zcodedispatch\mytask-task.txt" --cwd "E:\repo" --title "任务标题"
 

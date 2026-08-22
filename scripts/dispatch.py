@@ -33,8 +33,8 @@ DEFAULT_PROVIDER = "glm"
 DEFAULT_MODE = "yolo"
 DEFAULT_THOUGHT_LEVEL = "max"
 
-POLL_INTERVAL = 5
-CLAIM_WINDOW_SEC = 45  # next_run_at = now + 这么多秒，等调度器 20s tick 认领
+POLL_INTERVAL = 2
+CLAIM_WINDOW_SEC = 5   # next_run_at = now + 这么多秒；INSERT 已提交，调度器 20s tick 认领，最坏等待=delay+20s
 
 
 def out(msg: str) -> None:

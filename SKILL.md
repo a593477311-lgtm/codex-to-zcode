@@ -34,7 +34,7 @@ Codex 通过 `scripts/dispatch.py` 向 ZCode 桌面端的 automations 调度库
 （该目录需 gitignore）：
 
 ```powershell
-# 派活（默认：全新任务、yolo、GLM-5.3、思考 max、45s 后触发、超时 20 分钟）
+# 派活（默认：全新任务、yolo、GLM-5.3、思考 max、5s 后触发、超时 20 分钟）
 python "<skill 目录>\scripts\dispatch.py" --task-file "<仓库根>\Zcodedispatch\<任务名>-task.txt" --cwd "<仓库根目录>" --title "<任务标题>"
 
 # 预览（不执行，检查拼接结果）
